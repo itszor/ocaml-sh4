@@ -37,8 +37,8 @@ let word_addressed = false
     r14                         return address
     r15                         program counter
 
-    f0 - f6                     general purpose (f4 - f6 preserved by C)
-    f7                          temporary
+    d0 - d14                     general purpose (d8 - d15 preserved by C)
+    d15                          temporary
 *)
 
 let int_reg_name = [|
@@ -46,7 +46,8 @@ let int_reg_name = [|
 |]
 
 let float_reg_name = [|
-  "f0"; "f1"; "f2"; "f3"; "f4"; "f5"; "f6"
+  "d0";  "d1";  "d2";  "d3";  "d4";  "d5";  "d6"; "d7";
+  "d8";  "d9"; "d10"; "d11"; "d12"; "d13"; "d14"
 |]
 
 let num_register_classes = 2
@@ -57,7 +58,7 @@ let register_class r =
   | Addr -> 0
   | Float -> 1
 
-let num_available_registers = [| 10; 7 |]
+let num_available_registers = [| 10; 15 |]
 
 let first_available_register = [| 0; 100 |]
 
@@ -74,8 +75,8 @@ let hard_int_reg =
   v
 
 let hard_float_reg =
-  let v = Array.create 7 Reg.dummy in
-  for i = 0 to 6 do v.(i) <- Reg.at_location Float (Reg(100 + i)) done;
+  let v = Array.create 15 Reg.dummy in
+  for i = 0 to 14 do v.(i) <- Reg.at_location Float (Reg(100 + i)) done;
   v
 
 let all_phys_regs =
@@ -121,11 +122,11 @@ let outgoing ofs = Outgoing ofs
 let not_supported ofs = fatal_error "Proc.loc_results: cannot call"
 
 let loc_arguments arg =
-  calling_conventions 0 7 100 103 outgoing arg
+  calling_conventions 0 7 100 107 outgoing arg
 let loc_parameters arg =
-  let (loc, ofs) = calling_conventions 0 7 100 103 incoming arg in loc
+  let (loc, ofs) = calling_conventions 0 7 100 107 incoming arg in loc
 let loc_results res =
-  let (loc, ofs) = calling_conventions 0 7 100 103 not_supported res in loc
+  let (loc, ofs) = calling_conventions 0 7 100 107 not_supported res in loc
 
 (* Calling conventions for C are as for Caml, except that float arguments
    are passed in pairs of integer registers. *)
@@ -162,8 +163,8 @@ let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
-let destroyed_at_c_call =               (* r4-r9, f4-f6 preserved *)
-  Array.of_list(List.map phys_reg [0;1;2;3;8;9; 100;101;102;103])
+let destroyed_at_c_call =               (* r4-r9, d8-d15 preserved *)
+  Array.of_list(List.map phys_reg [0;1;2;3;8;9; 100;101;102;103;104;105;106;107])
 
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ | Iextcall(_, true)) -> all_phys_regs
@@ -177,10 +178,10 @@ let destroyed_at_raise = all_phys_regs
 
 let safe_register_pressure = function
     Iextcall(_, _) -> 4
-  | _ -> 7
+  | _ -> 10
 let max_register_pressure = function
     Iextcall(_, _) -> [| 4; 4 |]
-  | _ -> [| 10; 7 |]
+  | _ -> [| 10; 15 |]
 
 (* Layout of the stack *)
 

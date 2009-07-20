@@ -20,6 +20,11 @@ open Reg
 open Arch
 open Mach
 
+let macosx =
+  match Config.system with
+  | "macosx" -> true
+  | _ -> false
+
 (* Immediate operands are 8-bit immediate values, zero-extended, and rotated
    right by 0, 2, 4, ... 30 bits.
    To avoid problems with Caml's 31-bit arithmetic,
@@ -97,14 +102,16 @@ method select_operation op args =
         [arg1; Cconst_int n] when n = 1 lsl (Misc.log2 n) ->
           (Iintop_imm(Idiv, n), [arg1])
       | _ ->
-          (Iextcall("__divsi3", false), args)
+          let prefix = if macosx then "__stub" else "" in
+          (Iextcall(prefix ^ "__divsi3", false), args)
       end
   | Cmodi ->
       begin match args with
         [arg1; Cconst_int n] when n = 1 lsl (Misc.log2 n) ->
           (Iintop_imm(Imod, n), [arg1])
       | _ ->
-          (Iextcall("__modsi3", false), args)
+          let prefix = if macosx then "__stub" else "" in
+          (Iextcall(prefix ^ "__modsi3", false), args)
       end
   | Ccheckbound _ ->
       begin match args with
