@@ -38,13 +38,13 @@ all: libasmrun.a all-$(PROFILING)
 
 libasmrun.a: $(OBJS)
 	rm -f libasmrun.a
-	ar rc libasmrun.a $(OBJS)
-	$(RANLIB) libasmrun.a
+	$(TARGETAR) rc libasmrun.a $(OBJS)
+	$(TARGETRANLIB) libasmrun.a
 
 libasmrund.a: $(DOBJS)
 	rm -f libasmrund.a
-	ar rc libasmrund.a $(DOBJS)
-	$(RANLIB) libasmrund.a
+	$(TARGETAR) rc libasmrund.a $(DOBJS)
+	$(TARGETRANLIB) libasmrund.a
 
 all-noprof:
 
@@ -52,21 +52,21 @@ all-prof: libasmrunp.a
 
 libasmrunp.a: $(POBJS)
 	rm -f libasmrunp.a
-	ar rc libasmrunp.a $(POBJS)
-	$(RANLIB) libasmrunp.a
+	$(TARGETAR) rc libasmrunp.a $(POBJS)
+	$(TARGETRANLIB) libasmrunp.a
 
 install: install-default install-$(PROFILING)
 
 install-default:
 	cp libasmrun.a $(LIBDIR)/libasmrun.a
-	cd $(LIBDIR); $(RANLIB) libasmrun.a
+	cd $(LIBDIR); $(TARGETRANLIB) libasmrun.a
 
 install-noprof:
 	rm -f $(LIBDIR)/libasmrunp.a; ln -s libasmrun.a $(LIBDIR)/libasmrunp.a
 
 install-prof:
 	cp libasmrunp.a $(LIBDIR)/libasmrunp.a
-	cd $(LIBDIR); $(RANLIB) libasmrunp.a
+	cd $(LIBDIR); $(TARGETRANLIB) libasmrunp.a
 
 power.o: power-$(SYSTEM).o
 	cp power-$(SYSTEM).o power.o

@@ -65,8 +65,9 @@ install::
 	if test -n "$(HEADERS)"; then cp $(HEADERS) $(LIBDIR)/caml/; fi
 
 installopt:
-	cp $(CAMLOBJS_NAT) $(LIBNAME).cmxa $(LIBNAME).$(A) $(LIBDIR)/
-	cd $(LIBDIR); $(RANLIB) $(LIBNAME).a
+	cp $(CAMLOBJS_NAT) $(LIBNAME).cmxa $(LIBNAME).$(A) $(CMIFILES) $(CMIFILES:.cmi=.mli) lib$(CLIBNAME).$(A) $(LIBDIR)/
+	cd $(LIBDIR); $(TARGETRANLIB) $(LIBNAME).a
+	cd $(LIBDIR); $(TARGETRANLIB) lib$(CLIBNAME).$(A)
 	if test -f $(LIBNAME).cmxs; then cp $(LIBNAME).cmxs $(LIBDIR)/; fi
 
 partialclean:
@@ -87,4 +88,4 @@ clean:: partialclean
 	$(CAMLOPT) -c $(COMPFLAGS) $<
 
 .c.$(O):
-	$(BYTECC) $(BYTECCCOMPOPTS) $(CFLAGS) -c $<
+	$(NATIVECC) $(BYTECCCOMPOPTS) $(CFLAGS) -c $<

@@ -98,7 +98,7 @@ type link_mode =
   | MainDll
   | Partial
 
-let call_linker mode output_name files extra =
+let call_linker target mode output_name files extra =
   let files = quote_files files in
   let cmd =
     if mode = Partial then
@@ -109,12 +109,15 @@ let call_linker mode output_name files extra =
         extra
     else
       Printf.sprintf "%s -o %s %s %s %s %s %s %s"
-        (match !Clflags.c_compiler, mode with
-        | Some cc, _ -> cc
-        | None, Exe -> Config.mkexe
-        | None, Dll -> Config.mkdll
-        | None, MainDll -> Config.mkmaindll
-        | None, Partial -> assert false
+        (match !Clflags.c_compiler, mode, target with
+        | Some cc, _, _ -> cc
+        | None, Exe, false -> Config.mkexe
+        | None, Dll, false -> Config.mkdll
+        | None, MainDll, false -> Config.mkmaindll
+        | None, Exe, true -> Config.target_mkexe
+        | None, Dll, true -> Config.target_mkdll
+        | None, MainDll, true -> Config.target_mkmaindll
+        | None, Partial, _ -> assert false
         )
         (Filename.quote output_name)
         (if !Clflags.gprofile then Config.cc_profile else "")

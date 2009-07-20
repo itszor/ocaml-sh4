@@ -104,7 +104,7 @@ let make_package_object ppf members targetobj targetname coercion =
       (fun m -> chop_extension_if_any m.pm_file ^ Config.ext_obj)
       (List.filter (fun m -> m.pm_kind <> PM_intf) members) in
   let ok =
-    Ccomp.call_linker Ccomp.Partial targetobj (objtemp :: objfiles) ""
+    Ccomp.call_linker true Ccomp.Partial targetobj (objtemp :: objfiles) ""
   in
   remove_file objtemp;
   if not ok then raise(Error Linking_error)

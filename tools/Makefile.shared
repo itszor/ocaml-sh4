@@ -111,6 +111,7 @@ ocamlmklib.ml: ocamlmklib.mlp ../config/Makefile
             -e "s|%%NATIVECCRPATH%%|$(NATIVECCRPATH)|" \
             -e "s|%%MKSHAREDLIBRPATH%%|$(MKSHAREDLIBRPATH)|" \
             -e "s|%%RANLIB%%|$(RANLIB)|" \
+            -e "s|%%TARGETRANLIB%%|$(TARGETRANLIB)|" \
           ocamlmklib.mlp >> ocamlmklib.ml
 
 beforedepend:: ocamlmklib.ml

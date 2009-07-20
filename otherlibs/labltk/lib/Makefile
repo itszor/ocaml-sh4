@@ -69,6 +69,6 @@ install:
 installopt:
 	@if test -d $(INSTALLDIR); then : ; else mkdir $(INSTALLDIR); fi
 	cp $(LIBNAME).cmxa $(LIBNAME).$(A) $(INSTALLDIR)
-	cd $(INSTALLDIR); $(RANLIB) $(LIBNAME).$(A)
+	cd $(INSTALLDIR); $(TARGETRANLIB) $(LIBNAME).$(A)
 	chmod 644 $(INSTALLDIR)/$(LIBNAME).cmxa
 	chmod 644 $(INSTALLDIR)/$(LIBNAME).$(A)

@@ -47,6 +47,14 @@ val mkmaindll: string
         (* The linker command line to build main programs as dlls. *)
 val ranlib: string
         (* Command to randomize a library, or "" if not needed *)
+val target_mkdll: string
+        (* The linker command line to build dynamic libraries (for 'target' platform). *)
+val target_mkexe: string
+        (* The linker command line to build executables (for 'target' platform). *)
+val target_mkmaindll: string
+        (* The linker command line to build main programs as dlls (for 'target' platform). *)
+val target_ranlib: string
+        (* Command to randomize a library, or "" if not needed (for 'target' platform) *)
 val cc_profile : string
         (* The command line option to the C compiler to enable profiling. *)
 

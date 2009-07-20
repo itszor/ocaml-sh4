@@ -78,13 +78,24 @@ SHARPBANGSCRIPTS=true
 # Under FreeBSD:
 #CPP=cpp -P
 
-### How to invoke ranlib
+### How to invoke ranlib (for a 'local' library)
 # BSD-style:
 #RANLIB=ranlib
 #RANLIBCMD=ranlib
 # If ranlib is not needed:
 #RANLIB=ar rs
 #RANLIBCMD=
+
+### How to invoke ranlib (for a 'target' library)
+# BSD-style:
+#TARGETRANLIB=ranlib
+#TARGETRANLIBCMD=ranlib
+# If ranlib is not needed:
+#TARGETRANLIB=ar rs
+#TARGETRANLIBCMD=
+
+### How to invoke ar (for a 'target' library)
+#TARGETAR=
 
 ### Shared library support
 # Extension for shared libraries: so if supported, a if not supported
@@ -283,3 +294,15 @@ BNG_ASM_LEVEL=1
 #TK_LINK="-ltk8.0 -ltcl8.0"
 # For Tcl/Tk 8.0 on FreeBSD:
 #TK_LINK="-L/usr/local/lib -ltk8.0 -ltcl8.0"
+
+### Compilers for producing executables ('local' and 'target' ones)
+#MKEXE=
+#TARGETMKEXE=
+
+### Compilers for producing dlls ('local' and 'target' ones)
+#MKDLL=
+#TARGETMKDLL=
+
+### Compilers for producing dlls ('local' and 'target' ones)
+#MKMAINDLL=
+#TARGETMKMAINDLL=

@@ -431,7 +431,7 @@ void caml_startup(char ** argv)
 (* Build a custom runtime *)
 
 let build_custom_runtime prim_name exec_name =
-  Ccomp.call_linker Ccomp.Exe exec_name 
+  Ccomp.call_linker false Ccomp.Exe exec_name 
     ([prim_name] @ List.rev !Clflags.ccobjs @ ["-lcamlrun"])
     Config.bytecomp_c_libraries
 
@@ -498,7 +498,7 @@ let link objfiles output_name =
         if not (Filename.check_suffix output_name Config.ext_obj) then begin
           temps := obj_file :: !temps;
           if not (
-            Ccomp.call_linker Ccomp.MainDll output_name
+            Ccomp.call_linker false Ccomp.MainDll output_name
               ([obj_file] @ List.rev !Clflags.ccobjs @ ["-lcamlrun"])
               Config.bytecomp_c_libraries
            ) then raise (Error Custom_runtime);

@@ -250,7 +250,7 @@ let make_shared_startup_file ppf units filename =
 
 
 let call_linker_shared file_list output_name =
-  if not (Ccomp.call_linker Ccomp.Dll output_name file_list "")
+  if not (Ccomp.call_linker true Ccomp.Dll output_name file_list "")
   then raise(Error Linking_error)
 
 let link_shared ppf objfiles output_name =
@@ -292,7 +292,7 @@ let call_linker file_list startup_file output_name =
     else if !Clflags.output_c_object then Ccomp.Partial
     else Ccomp.Exe
   in
-  if not (Ccomp.call_linker mode output_name files c_lib)
+  if not (Ccomp.call_linker true mode output_name files c_lib)
   then raise(Error Linking_error)
 
 (* Main entry point *)

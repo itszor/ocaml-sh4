@@ -260,6 +260,22 @@ opt:
 	$(MAKE) otherlibrariesopt
 	$(MAKE) ocamlbuildlib.native
 
+# Compile the cross-compiler
+cross:
+	cd boot && cp `which ocamlrun` .
+	cd byterun && cp `which ocamlrun` .
+	cd stdlib; $(MAKE) COMPILER=../boot/ocamlc all
+	cd stdlib; cp $(LIBFILES) ../boot
+	cd yacc; $(MAKE) all
+	cp yacc/ocamlyacc$(EXE) boot/ocamlyacc$(EXE)
+	$(MAKE) ocamlc
+	$(MAKE) ocamltools
+	$(MAKE) library
+	$(MAKE) runtimeopt
+	$(MAKE) ocamlopt
+	$(MAKE) libraryopt
+	$(MAKE) otherlibrariesopt
+
 # Native-code versions of the tools
 opt.opt: checkstack runtime core ocaml opt-core ocamlc.opt otherlibraries \
          ocamlbuild.byte camlp4out $(DEBUGGER) ocamldoc ocamlopt.opt \
@@ -315,6 +331,18 @@ installopt:
 	  then cp ocamlopt.opt $(BINDIR)/ocamlopt.opt$(EXE); else :; fi
 	if test -f lex/ocamllex.opt; \
 	  then cp lex/ocamllex.opt $(BINDIR)/ocamllex.opt$(EXE); else :; fi
+
+# Installation of the cross-compiler
+installcross:
+	if test -d $(BINDIR); then : ; else $(MKDIR) $(BINDIR); fi
+	if test -d $(LIBDIR); then : ; else $(MKDIR) $(LIBDIR); fi
+	if test -d $(STUBLIBDIR); then : ; else $(MKDIR) $(STUBLIBDIR); fi
+	cd asmrun; $(MAKE) install
+	cp byterun/ocamlrun $(BINDIR)/ocamlrun$(EXE)
+	cp ocamlopt $(BINDIR)/ocamlopt$(EXE)
+	cd stdlib; $(MAKE) installopt
+	for i in $(OTHERLIBRARIES); \
+	  do (cd otherlibs/$$i; $(MAKE) installopt) || exit $$?; done
 
 clean:: partialclean
 
@@ -377,6 +405,7 @@ utils/config.ml: utils/config.mlp config/Makefile
             -e 's|%%BYTECCLIBS%%|$(BYTECCLIBS)|' \
             -e 's|%%NATIVECCLIBS%%|$(NATIVECCLIBS)|' \
             -e 's|%%RANLIBCMD%%|$(RANLIBCMD)|' \
+            -e 's|%%TARGETRANLIBCMD%%|$(TARGETRANLIBCMD)|' \
             -e 's|%%CC_PROFILE%%|$(CC_PROFILE)|' \
             -e 's|%%ARCH%%|$(ARCH)|' \
             -e 's|%%MODEL%%|$(MODEL)|' \
@@ -390,6 +419,9 @@ utils/config.ml: utils/config.mlp config/Makefile
             -e 's|%%MKDLL%%|$(MKDLL)|' \
             -e 's|%%MKEXE%%|$(MKEXE)|' \
             -e 's|%%MKMAINDLL%%|$(MKMAINDLL)|' \
+            -e 's|%%TARGETMKDLL%%|$(TARGETMKDLL)|' \
+            -e 's|%%TARGETMKEXE%%|$(TARGETMKEXE)|' \
+            -e 's|%%TARGETMKMAINDLL%%|$(TARGETMKMAINDLL)|' \
             utils/config.mlp > utils/config.ml
 	@chmod -w utils/config.ml
 

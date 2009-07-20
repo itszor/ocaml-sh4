@@ -29,4 +29,4 @@ type link_mode =
   | MainDll
   | Partial
 
-val call_linker: link_mode -> string -> string list -> string -> bool
+val call_linker: bool -> link_mode -> string -> string list -> string -> bool
