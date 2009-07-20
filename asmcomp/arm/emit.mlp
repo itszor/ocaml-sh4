@@ -680,6 +680,8 @@ let begin_assembly() =
   `#define trap_ptr     r11\n`;
   `#define alloc_ptr    r8\n`;
   `#define alloc_limit  r9\n`;
+  `	.arch armv5t\n`;
+  `	.fpu vfp\n`;
   let lbl_begin = Compilenv.make_symbol (Some "data_begin") in
   `	.data\n`;
   `	.global	{emit_symbol lbl_begin}\n`;
