@@ -12,7 +12,7 @@
 
 (* $Id: reload.ml,v 1.4 1999/11/17 18:56:41 xleroy Exp $ *)
 
-(* Reloading for the ARM *)
+(* Reloading for the SH4 *)
 
 let fundecl f =
   (new Reloadgen.reload_generic)#fundecl f

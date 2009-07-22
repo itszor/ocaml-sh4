@@ -10,9 +10,7 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(* $Id: proc.ml,v 1.9 2007/10/30 12:37:16 xleroy Exp $ *)
-
-(* Description of the ARM processor *)
+(* Description of the SH4 processor *)
 
 open Misc
 open Cmm
@@ -26,28 +24,25 @@ let word_addressed = false
 
 (* Registers available for register allocation *)
 
-(* Register map:
-    r0 - r7                     general purpose (r4 - r7 preserved by C)
-    r8                          allocation pointer (preserved by C)
-    r9                          allocation limit (preserved by C)
-    r10                         general purpose
-    r11                         trap pointer (preserved by C)
-    r12                         general purpose
-    r13                         stack pointer
-    r14                         return address
-    r15                         program counter
+(* Register map (in progress!)
+    r0 - r11                    general purpose  (r11 for caml_c_call temp)
+    r12                         allocation pointer
+    r13                         allocation limit
+    r14                         trap pointer
+    r15                         stack pointer
 
-    d0 - d14                     general purpose (d8 - d15 preserved by C)
-    d15                          temporary
+    dr0-dr7			Double-precision float registers
+    
+    There are also control registers, and system registers.  We might need to
+    model some of those.
 *)
 
 let int_reg_name = [|
-  "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r10"; "r12"
+  "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r8"; "r9"; "r10"; "r11"
 |]
 
 let float_reg_name = [|
-  "d0";  "d1";  "d2";  "d3";  "d4";  "d5";  "d6"; "d7";
-  "d8";  "d9"; "d10"; "d11"; "d12"; "d13"; "d14"
+  "dr0";  "dr1";  "dr2";  "dr3";  "dr4";  "dr5";  "dr6"; "dr7"
 |]
 
 let num_register_classes = 2
@@ -58,7 +53,7 @@ let register_class r =
   | Addr -> 0
   | Float -> 1
 
-let num_available_registers = [| 10; 15 |]
+let num_available_registers = [| 12; 8 |]
 
 let first_available_register = [| 0; 100 |]
 
@@ -70,13 +65,13 @@ let rotate_registers = true
 (* Representation of hard registers by pseudo-registers *)
 
 let hard_int_reg =
-  let v = Array.create 10 Reg.dummy in
-  for i = 0 to 9 do v.(i) <- Reg.at_location Int (Reg i) done;
+  let v = Array.create 12 Reg.dummy in
+  for i = 0 to 11 do v.(i) <- Reg.at_location Int (Reg i) done;
   v
 
 let hard_float_reg =
-  let v = Array.create 15 Reg.dummy in
-  for i = 0 to 14 do v.(i) <- Reg.at_location Float (Reg(100 + i)) done;
+  let v = Array.create 8 Reg.dummy in
+  for i = 0 to 7 do v.(i) <- Reg.at_location Float (Reg(100 + i)) done;
   v
 
 let all_phys_regs =
@@ -121,6 +116,8 @@ let incoming ofs = Incoming ofs
 let outgoing ofs = Outgoing ofs
 let not_supported ofs = fatal_error "Proc.loc_results: cannot call"
 
+(* FIXME for SH4 ABI! *)
+
 let loc_arguments arg =
   calling_conventions 0 7 100 107 outgoing arg
 let loc_parameters arg =
@@ -130,6 +127,8 @@ let loc_results res =
 
 (* Calling conventions for C are as for Caml, except that float arguments
    are passed in pairs of integer registers. *)
+
+(* FIXME for SH4 ABI! *)
 
 let loc_external_arguments arg =
   let loc = Array.create (Array.length arg) Reg.dummy in
@@ -163,13 +162,22 @@ let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
+(* FIXME for SH4! *)
+
 let destroyed_at_c_call =               (* r4-r9, d8-d15 preserved *)
-  Array.of_list(List.map phys_reg [0;1;2;3;8;9; 100;101;102;103;104;105;106;107])
+  Array.of_list(List.map phys_reg [0;1;2;3;10;11;
+				   100;101;102;103;104;105;106;107])
 
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ | Iextcall(_, true)) -> all_phys_regs
   | Iop(Iextcall(_, false)) -> destroyed_at_c_call
-  | Iop(Ialloc(_)) -> [|phys_reg 8|]    (* r10 destroyed *)
+  (* r0 used as temp register for some insns *)
+  | Iop(Itailcall_ind)
+  | Iop(Itailcall_imm _)
+  | Iop(Istackoffset _)
+  | Iop(Iconst_float _)-> [|phys_reg 0|]
+  | Iop(Iintop(Icheckbound)) -> [|phys_reg 11|]  (* r11 used as temp *)
+  | Iop(Ialloc(_)) -> [||]    (* FIXME: Whatever is destroyed by alloc *)
   | _ -> [||]
 
 let destroyed_at_raise = all_phys_regs
@@ -178,10 +186,10 @@ let destroyed_at_raise = all_phys_regs
 
 let safe_register_pressure = function
     Iextcall(_, _) -> 4
-  | _ -> 10
+  | _ -> 12
 let max_register_pressure = function
     Iextcall(_, _) -> [| 4; 4 |]
-  | _ -> [| 10; 15 |]
+  | _ -> [| 12; 8 |]
 
 (* Layout of the stack *)
 

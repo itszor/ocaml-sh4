@@ -6,7 +6,7 @@ PARENT=$(readlink -f "$HERE/..")
 PREFIX="$PARENT/prefix"
 TARGETTMP="$PARENT/tmp"
 
-if false; then
+if true; then
   TARGETARCH=sh4
   CROSS_COMPILE=sh-linux-gnu-
   TARGETSYS=mia

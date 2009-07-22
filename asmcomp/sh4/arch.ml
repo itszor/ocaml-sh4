@@ -10,9 +10,7 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(* $Id: arch.ml,v 1.9 2002/11/29 15:03:36 xleroy Exp $ *)
-
-(* Specific operations for the ARM processor *)
+(* Specific operations for the SH4 processor *)
 
 open Misc
 open Format
@@ -24,24 +22,15 @@ let command_line_options = []
 (* Addressing modes *)
 
 type addressing_mode =
-    Iindexed of int                     (* reg + displ *)
-
-(* We do not support the reg + shifted reg addressing mode, because
-   what we really need is reg + shifted reg + displ,
-   and this is decomposed in two instructions (reg + shifted reg -> tmp,
-   then addressing tmp + displ). *)
+    Iindirect				(* reg *)
+  | Iindexed of int                     (* reg + displ *)
 
 (* Specific operations *)
 
 type specific_operation =
-    Ishiftarith of arith_operation * int
-  | Ishiftcheckbound of int
-  | Irevsubimm of int
+    Ixtrct
 
-and arith_operation =
-    Ishiftadd
-  | Ishiftsub
-  | Ishiftsubrev
+and arith_operation = unit
 
 (* Sizes, endianness *)
 
@@ -53,34 +42,28 @@ let size_float = 8
 
 (* Operations on addressing modes *)
 
-let identity_addressing = Iindexed 0
+let identity_addressing = Iindirect
 
-let offset_addressing (Iindexed n) delta = Iindexed(n + delta)
+let offset_addressing addrmode delta =
+  match addrmode with
+    Iindexed n -> Iindexed (n + delta)
+  | Iindirect -> Iindexed (delta)
 
-let num_args_addressing (Iindexed n) = 1
+let num_args_addressing = function
+    Iindexed _ -> 1
+  | Iindirect -> 0
 
 (* Printing operations and addressing modes *)
 
 let print_addressing printreg addr ppf arg =
   match addr with
+    Iindirect ->
+      fprintf ppf "@";
+      printreg ppf arg.(0)
   | Iindexed n ->
+      fprintf ppf "@(%i," n;
       printreg ppf arg.(0);
-      if n <> 0 then fprintf ppf " + %i" n
+      fprintf ppf ")"
 
 let print_specific_operation printreg op ppf arg =
-  match op with
-  | Ishiftarith(op, shift) ->
-      let op_name = function
-      | Ishiftadd -> "+"
-      | Ishiftsub -> "-"
-      | Ishiftsubrev -> "-rev" in
-      let shift_mark =
-       if shift >= 0
-       then sprintf "<< %i" shift
-       else sprintf ">> %i" (-shift) in
-      fprintf ppf "%a %s %a %s"
-       printreg arg.(0) (op_name op) printreg arg.(1) shift_mark
-  | Ishiftcheckbound n ->
-      fprintf ppf "check %a >> %i > %a" printreg arg.(0) n printreg arg.(1)
-  | Irevsubimm n ->
-      fprintf ppf "%i %s %a" n "-" printreg arg.(0)
+  ()
