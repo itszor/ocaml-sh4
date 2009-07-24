@@ -68,16 +68,30 @@ let emit_next_reg r =
     Reg r -> emit_string (register_name(r + 1))
   | _ -> fatal_error "Emit_sh4.emit_next_reg"
 
-(* High/low part of a floating-point register *)
+(* High/low parts of a floating-point register. Note that a double-precision
+   register is represented as two single-precision registers, like e.g.:
+   
+      31       0 31       0
+     +----------+----------+
+     |    fr0   |    fr1   |
+     +---------------------+
+     |         dr0         |
+     +---------------------+
+      63                  0
+
+   So that the lower-numbered single-precision register has the "most
+   significant" end of the double-precision value, i.e. high and low are the
+   other way round to what one might expect.
+*)
 
 let emit_float_low r =
   match r.loc with
-    Reg r -> emit_string ("fr" ^ (string_of_int ((r - 100) * 2)))
+    Reg r -> emit_string ("fr" ^ (string_of_int ((r - 100) * 2 + 1)))
   | _ -> fatal_error "Emit_sh4.emit_float_low"
 
 let emit_float_high r =
   match r.loc with
-    Reg r -> emit_string ("fr" ^ (string_of_int ((r - 100) * 2 + 1)))
+    Reg r -> emit_string ("fr" ^ (string_of_int ((r - 100) * 2)))
   | _ -> fatal_error "Emit_sh4.emit_float_low"
 
 (* Layout of the stack frame *)
@@ -112,7 +126,7 @@ let emit_stack r =
 let emit_addressing addr r n =
   match addr with
     Iindexed ofs -> `@({emit_int ofs},{emit_reg r.(n)})`
-  | Iindirect -> `@({emit_reg r.(n)})`
+  | Iindirect -> `@{emit_reg r.(n)}`
 
 (* Record live pointers at call points *)
 
@@ -222,12 +236,9 @@ let name_for_float_comparison cmp neg =
     | Flipped -> InvFlipped
     | InvFlipped -> Flipped
   
-(* Recognize immediate operands *)
+(* Recognize immediate operands (for mov/add) *)
 
 let is_immediate n =
-  n >= (Nativeint.of_int 0) && n < (Nativeint.of_int 256)
-
-let is_signext_immediate n =
   n >= (Nativeint.of_int (-128)) && n < (Nativeint.of_int 128)
 
 (* Name of current function *)
@@ -242,7 +253,7 @@ let symbol_constants = (Hashtbl.create 11 : (string, int) Hashtbl.t)
 let float_constants = (Hashtbl.create 11 : (string, int) Hashtbl.t)
 (* Table of integer literals *)
 let int_constants = (Hashtbl.create 11 : (string, int) Hashtbl.t)
-(* Total space (in word) occupied by pending literals *)
+(* Total space (in halfwords) occupied by pending literals *)
 let num_literals = ref 0
 (* True if we've at least one pending float literal *)
 let pending_float = ref false
@@ -260,14 +271,15 @@ let label_constant tbl s size =
 (* Emit all pending constants *)
 
 let emit_constants () =
+  (* (Longword) constants must be word aligned. *)
+  `	.align	2\n`;
   Hashtbl.iter
     (fun s lbl ->
       `{emit_label lbl}:        .long   {emit_symbol s}\n`)
     symbol_constants;
   Hashtbl.iter
     (fun s lbl ->
-      let n = int_of_string s in
-      `{emit_label lbl}:	.long	{emit_int n}\n`)
+      `{emit_label lbl}:	.long	{emit_string s}\n`)
     int_constants;
   Hashtbl.iter
     (fun s lbl ->
@@ -284,23 +296,34 @@ let emit_constants () =
   pending_float := false
 
 let label_int_constant num =
-  label_constant int_constants (Nativeint.to_string num) 1
+  label_constant int_constants (Nativeint.to_string num) 2
 
-(* Load a 32-bit constant into reg. *)
+(* Load a 32-bit constant into reg. FIXME: Can use a smarter strategy here,
+   though with possible speed vs. size considerations, e.g.:
+
+     - can load 128-255 using an extra extu.b
+     - can load 0xff80 - 0xffff using an extra extu.w
+     - can load some shifted constants using extra
+       shll/shll2/shll8/shll16/rotl/rotr.
+     - can load some permuted constants using extra swap.b, swap.w.
+
+   All of these will take 4 bytes in total, vs. 6 for mov.l + constant pool
+   entry, and potentially save icache space too.
+*)
 
 let load_const imm reg =
-  if is_signext_immediate imm then begin
+  if is_immediate imm then begin
     `	mov	#{emit_nativeint imm}, {emit_reg reg}\n`
   end else begin
     let lbl = label_int_constant imm in
-    `	mov	{emit_label lbl}, {emit_reg reg} ! {emit_nativeint imm}\n`
+    `	mov.l	{emit_label lbl}, {emit_reg reg} ! {emit_nativeint imm}\n`
   end
 
 (* Add a 32-bit constant to reg. FIXME: can't do that without a temp, so this
    isn't very useful. *)
 
-let add_const reg imm =
-  if is_signext_immediate imm then begin
+let add_const imm reg =
+  if is_immediate imm then begin
     `	add	#{emit_nativeint imm}, {emit_reg reg}\n`
   end else
     fatal_error "Emit_sh4.add_const"
@@ -311,7 +334,7 @@ let add_const reg imm =
 let emit_stack_adjustment imm =
   if imm = Nativeint.of_int 0 then
     0
-  else if is_signext_immediate imm then begin
+  else if is_immediate imm then begin
     `	add	#{emit_nativeint imm}, r15\n`; 1
   end else if imm > Nativeint.of_int 0 then begin
     load_const imm (phys_reg 0);
@@ -341,15 +364,14 @@ let emit_instr i =
 	    `	flds	{emit_float_high src}, fpul\n`;
 	    `	sts	fpul, {emit_next_reg dst}\n`; 4
         | {loc = Reg rs; typ = Int|Addr}, {loc = Stack sd} ->
-	    `	mov	{emit_reg src}, {emit_stack dst}\n`; 1
+	    `	mov.l	{emit_reg src}, {emit_stack dst}\n`; 1
         | {loc = Reg rs; typ = Float}, {loc = Stack sd} ->
-	    (* Won't work, not usually valid. *)
             `	fmov	{emit_reg src}, {emit_stack dst}\n`; 1
         | {loc = Stack ss; typ = Int|Addr}, {loc = Reg rd} ->
-	    ` mov	{emit_stack src}, {emit_reg dst}\n`; 1
+	    `	mov.l	{emit_stack src}, {emit_reg dst}\n`; 1
         | {loc = Stack ss; typ = Float}, {loc = Reg rd} ->
 	    (* Won't work either. *)
-	    ` fmov	{emit_stack src}, {emit_reg dst}\n`; 1
+	    `	fmov	{emit_stack src}, {emit_reg dst}\n`; 1
         | _ ->
             assert false
       end
@@ -359,7 +381,7 @@ let emit_instr i =
         `	mov	#{emit_nativeint n}, {emit_reg r}\n`; 1
       end else begin
 	let lbl = label_int_constant n in
-	`	mov	{emit_label lbl}, {emit_reg r} ! {emit_nativeint n}\n`; 1
+	`	mov.l	{emit_label lbl}, {emit_reg r} ! {emit_nativeint n}\n`; 1
       end
   | Lop(Iconst_float s) ->
       let r = i.res.(0) in
@@ -367,22 +389,22 @@ let emit_instr i =
       (* fldi0/fldi1 are single-precision only. Might it win to use those and
 	 convert to double-precision? (Definitely for size.) *)
       | _ ->
-        let lbl = label_constant float_constants s 2 in
+        let lbl = label_constant float_constants s 4 in
         pending_float := true;
 	`	mova	{emit_label lbl}, r0\n`;
         `	fmov	@r0, {emit_reg r} ! {emit_string s}\n`; 2
       end
   | Lop(Iconst_symbol s) ->
-      let lbl = label_constant symbol_constants s 1 in
-      `	mov	{emit_label lbl}, {emit_reg i.res.(0)} ! {emit_symbol s}\n`; 1
+      let lbl = label_constant symbol_constants s 2 in
+      `	mov.l	{emit_label lbl}, {emit_reg i.res.(0)} ! {emit_symbol s}\n`; 1
   | Lop(Icall_ind) ->
-      `{record_frame i.live}	jsr	{emit_reg i.arg.(0)}\n`;
+      `{record_frame i.live}	jsr	@{emit_reg i.arg.(0)}\n`;
       `	nop\n`; 2  (* FIXME: Delay slot. *)
   | Lop(Icall_imm s) ->
-      let lbl = label_constant symbol_constants s 1 in
+      let lbl = label_constant symbol_constants s 2 in
       (* We can't really call immediate functions. An argument in r0 will get
 	 destroyed. *)
-      `	mov	{emit_label lbl}, r0\n`;
+      `	mov.l	{emit_label lbl}, r0\n`;
       `{record_frame i.live}	jsr	@r0\n`;
       `	nop\n`; 3
   | Lop(Itailcall_ind) ->
@@ -408,21 +430,21 @@ let emit_instr i =
 	  `	lds.l	@r0+, pr\n`;
 	end;
 	let adj_insns = emit_stack_adjustment (Nativeint.of_int n)
-	and lbl = label_constant symbol_constants s 1 in
-        `	mov	{emit_label lbl}, r0\n`;
+	and lbl = label_constant symbol_constants s 2 in
+        `	mov.l	{emit_label lbl}, r0\n`;
 	`{record_frame i.live}	jmp	@r0\n`;
 	`	nop\n`; 6 + adj_insns
       end
   | Lop(Iextcall(s, alloc)) ->
       if alloc then begin
-        let func = label_constant symbol_constants s 1
-	and caml_c_call = label_constant symbol_constants "caml_c_call" 1 in
-        `	mov	{emit_label func}, r11 ! {emit_symbol s}\n`;
-	`	mov	{emit_label caml_c_call}, r10 ! caml_c_call\n`;
+        let func = label_constant symbol_constants s 2
+	and caml_c_call = label_constant symbol_constants "caml_c_call" 2 in
+        `	mov.l	{emit_label func}, r11 ! {emit_symbol s}\n`;
+	`	mov.l	{emit_label caml_c_call}, r10 ! caml_c_call\n`;
         `{record_frame i.live}	jsr	@r10\n`; 3
       end else begin
-	let func = label_constant symbol_constants s 1 in
-        `	mov	{emit_label func}, r11 ! {emit_symbol s}\n`;
+	let func = label_constant symbol_constants s 2 in
+        `	mov.l	{emit_label func}, r11 ! {emit_symbol s}\n`;
 	`	jsr	@r11\n`; 2
       end
   | Lop(Istackoffset n) ->
@@ -434,44 +456,78 @@ let emit_instr i =
       `	fmov.s	{emit_addressing addr i.arg 0}, {emit_float_low r}\n`;
       `	flds	{emit_float_low r}, fpul\n`;
       `	fcnvsd	fpul, {emit_reg r}\n`; 3
+  | Lop(Iload((Double | Double_u), addr)) ->
+      begin match addr with
+        Iindirect | Iindexed 0 ->
+	  let a = i.arg.(0)
+	  and r = i.res.(0) in
+	  `	fmov.s	@{emit_reg a}+, {emit_float_low r}\n`;
+	  `	fmov.s	@{emit_reg a}, {emit_float_high r}\n`;
+	  `	add	#-4, {emit_reg a}\n`; 3
+      | _ -> assert false
+      end
   | Lop(Iload(size, addr)) ->
       let r = i.res.(0) in
       let instr =
         match size with
-	(* FIXME: No unsigned byte/word loads! *)
         | Byte_signed -> "mov.b"
+	| Byte_unsigned -> "mov.b"
         | Sixteen_signed -> "mov.w"
+	| Sixteen_unsigned -> "mov.w"
 	| Word | Thirtytwo_signed | Thirtytwo_unsigned -> "mov.l"
-        | Double | Double_u -> "fmov"
-        | _  -> fatal_error "Emit_sh4.emit_instr" in
-      `	{emit_string	instr}	{emit_addressing addr i.arg 0} {emit_reg r}\n`;
-      1
+	| Double | Double_u | Single -> assert false in
+	`	{emit_string instr}	{emit_addressing addr i.arg 0}, {emit_reg r}\n`;
+	begin match size with
+	  Byte_unsigned ->
+	    `	extu.b	{emit_reg r}, {emit_reg r}\n`; 2
+	| Sixteen_unsigned ->
+	    `	extu.w	{emit_reg r}, {emit_reg r}\n`; 2
+	| _ -> 1
+	end
   | Lop(Istore(Single, addr)) ->
       let r = i.arg.(0) in
       `	fcnvds	{emit_reg r}, fpul\n`;
       `	fsts	fpul, {emit_float_low r}\n`;  (* FIXME: Clobbers src! *)
       `	fmov	{emit_float_low r}, {emit_addressing addr i.arg 0}\n`;
       3
+  | Lop(Istore((Double | Double_u), addr)) ->
+      let a = i.arg.(1)
+      and r = i.arg.(0) in
+      begin match addr with
+        Iindirect | Iindexed 0 ->
+	  `	add	#4, {emit_reg a}\n`;
+	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
+	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`; 3
+      | Iindexed n ->
+          (* emit_stores creates floating-point stores with small offsets. Deal
+	     with that here, though it's not very efficient to do so. *)
+	  if (4 + n) != 0 then
+	    `	add	#{emit_int (4 + n)}, {emit_reg a}\n`;
+	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
+	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
+	  `	add	#{emit_int (-n)}, {emit_reg a}\n`; 4
+      end
   | Lop(Istore(size, addr)) ->
       let r = i.arg.(0) in
       let instr =
         match size with
-          Byte_unsigned | Byte_signed -> "strb"
-        | Sixteen_unsigned | Sixteen_signed -> "strh"
-        | Double | Double_u -> "fstd"
-        | _ (* Word | Thirtytwo_signed | Thirtytwo_unsigned *) -> "str" in
-      `	{emit_string	instr}     {emit_reg r}, {emit_addressing addr i.arg 1}\n`;
+          Byte_unsigned | Byte_signed -> "mov.b"
+        | Sixteen_unsigned | Sixteen_signed -> "mov.w"
+        | Word | Thirtytwo_signed | Thirtytwo_unsigned -> "mov.l"
+	| Single | Double | Double_u -> assert false in
+      `	{emit_string instr}	{emit_reg r}, {emit_addressing addr i.arg 1}\n`;
       1
   | Lop(Ialloc n) ->
       let nn = Nativeint.of_int n in
       load_const nn (phys_reg 10);  (* FIXME: Random temporary! *)
-      let lbl = label_constant symbol_constants "caml_allocN" 1 in
-      `	mov {emit_label lbl}, @r11 ! {emit_string "caml_allocN"}\n`;
+      let lbl = label_constant symbol_constants "caml_allocN" 2 in
+      `	mov.l	{emit_label lbl}, r11 ! {emit_string "caml_allocN"}\n`;
       `{record_frame i.live}	jsr	@r11\n`;
-      (* FIXME: Delay slot, probably broken. *)
+      `	nop\n`;
+      (* FIXME: Delay slot. *)
       `	mov	alloc_ptr, {emit_reg i.res.(0)}\n`;
       `	add	#4, alloc_ptr\n`;
-      5
+      6
   | Lop(Iintop Ilsl) ->
       (* FIXME: Must ensure i.res.(0) = i.arg.(0). *)
       `	shld	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
@@ -498,16 +554,20 @@ let emit_instr i =
       end
   | Lop(Iintop(Icheckbound)) ->
       (* Uses r11 as temp. Call caml_ml_array_bound_error if arg0 <=u arg1. *)
-      let bnd = label_constant symbol_constants "caml_ml_array_bound_error" 1 in
+      let bnd = label_constant symbol_constants "caml_ml_array_bound_error" 2 in
       let skip = new_label () in
       `	cmp/hi	{emit_reg i.arg.(1)}, {emit_reg i.arg.(0)}\n`;
       `	bf	{emit_label skip}\n`;
-      `	mov	{emit_label bnd}, r11 ; {emit_string "caml_ml_array_bound_error"}\n`;
+      `	mov.l	{emit_label bnd}, r11 ! {emit_string "caml_ml_array_bound_error"}\n`;
       `	jsr	@r11\n`;
       `	nop\n`;  (* FIXME: Delay slot. *)
       `{emit_label skip}:\n`; 5
   | Lop(Iintop Imul) ->
+      (* Result in macl *)
       `	mul.l	{emit_reg i.arg.(1)}, {emit_reg i.arg.(0)}\n`; 1
+  | Lop(Iintop Idiv) ->
+      (* Utterly bogus! *)
+      `	div1	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
   | Lop(Iintop op) ->
       let instr = name_for_int_operation op in
       (* i.arg.(0) must equal i.res.(0). *)
@@ -524,7 +584,7 @@ let emit_instr i =
 	  else 0 in
 	if this_amt > 0 then begin
 	  let shift = name_for_shift_imm_operation op this_amt in
-	  `	{emit_string shift} {emit_reg i.res.(0)}\n`;
+	  `	{emit_string shift}	{emit_reg i.res.(0)}\n`;
 	  1 + emit_imm_shift (n - this_amt)
 	end else
 	  0 in
@@ -565,12 +625,18 @@ let emit_instr i =
       (* i.arg.(0) = i.res.(0). *)
       let instr = name_for_float_operation op in
       `	{emit_string	instr}	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
-  | Lop(Ispecific _)
+  | Lop(Ispecific(Istore_postinc sz)) ->
+      let opc = match sz with
+        Word -> "mov.l"
+      | Double_u -> "fmov"
+      | _ -> assert false in
+      `	{emit_string opc}	{emit_reg i.arg.(0)}, @-{emit_reg i.arg.(1)}\n`;
+      1
   | Lop(Iintop_imm((Icheckbound | Imod | Idiv | Imul | Isub), _))
   | Lop(Iintop_imm(Iasr, _))
   | Lop(Iintop_imm(Icomp(Isigned(Cge | Cgt | Cle | Clt)), _))
   | Lop(Iintop_imm(Icomp(Iunsigned(Cge | Cgt | Cle | Clt)), _)) ->
-      `	nop ! (bad insn selection)\n`; 1
+      assert false
   | Lreloadretaddr ->
       (* Clobbers r0. *)
       let n = frame_size() in
@@ -671,7 +737,7 @@ let emit_instr i =
       end;
       6
   | Lswitch jumptbl ->
-      (* Clobbers r0, i.arg.(0). *)
+      (* Clobbers r0, i.arg.(0) without asking. *)
       let tblstart = new_label () in
       `	mova	{emit_label tblstart}, r0\n`;
       `	shll2	{emit_reg i.arg.(0)}\n`;
@@ -686,20 +752,21 @@ let emit_instr i =
       6 + 2 * (Array.length jumptbl)
   | Lsetuptrap lbl ->
       (* FIXME: Range. *)
-      `	bsr	{emit_label lbl}\n`; 1
+      `	bsr	{emit_label lbl}\n`;
+      `	nop\n`; 2  (* FIXME: Delay slot *)
   | Lpushtrap ->
       stack_offset := !stack_offset + 8;
       `	sts.l	pr, @-r15\n`;
-      `	mov	trap_ptr, @-r15\n`;
+      `	mov.l	trap_ptr, @-r15\n`;
       `	mov	trap_ptr, r15\n`; 3
   | Lpoptrap ->
-      `	mov	@r15+, trap_ptr\n`;
+      `	mov.l	@r15+, trap_ptr\n`;
       `	lds.l	@r15+, pr\n`;
       stack_offset := !stack_offset - 8; 2
   | Lraise ->
       (* Clobbers PR. *)
       `	mov	trap_ptr, r15\n`;
-      `	mov	@r15+, trap_ptr\n`;
+      `	mov.l	@r15+, trap_ptr\n`;
       `	lds.l	@r15+, pr\n`;
       `	rts\n`;
       `	nop\n`; 5  (* FIXME: Delay slot. *)
@@ -718,7 +785,7 @@ let rec emit_all ninstr i =
   if i.desc = Lend then () else begin
     let n = emit_instr i in
     let ninstr' = ninstr + n in
-    let limit = (if !pending_float then 127 else 511) - !num_literals in
+    let limit = 511 - !num_literals in
     if ninstr' >= limit - 32 && no_fallthrough i.desc then begin
       emit_constants();
       emit_all 0 i.next
@@ -745,13 +812,16 @@ let fundecl fundecl =
   Hashtbl.clear float_constants;
   Hashtbl.clear int_constants;
   `	.text\n`;
-  `	.align	0\n`;
   `	.global	{emit_symbol fundecl.fun_name}\n`;
   `{emit_symbol fundecl.fun_name}:\n`;
   let n = frame_size() in
   ignore(emit_stack_adjustment (Nativeint.of_int (-n)));
-  if !contains_calls then
-    `	str	lr, [sp, #{emit_int(n - 4)}]\n`;
+  if !contains_calls then begin
+    (* FIXME: Clobbers r0 *)
+    `	mov	r15, r0\n`;
+    add_const (Nativeint.of_int n) (phys_reg 0);
+    `	sts.l	pr, @-r15\n`;
+  end;
   `{emit_label !tailrec_entry_point}:\n`;
   emit_all 0 fundecl.fun_body;
   emit_constants()
@@ -800,9 +870,9 @@ let data l =
 (* Beginning / end of an assembly file *)
 
 let begin_assembly() =
-  `trap_ptr	.req r14\n`;
-  `alloc_ptr	.req r12\n`;
-  `alloc_limit	.req r13\n`;
+  `#define trap_ptr r14\n`;
+  `#define alloc_ptr r12\n`;
+  `#define alloc_limit r13\n`;
   let lbl_begin = Compilenv.make_symbol (Some "data_begin") in
   `	.data\n`;
   `	.global	{emit_symbol lbl_begin}\n`;

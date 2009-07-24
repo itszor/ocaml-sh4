@@ -33,6 +33,8 @@ let word_addressed = false
 
     dr0-dr7			Double-precision float registers
     
+    macl, mach, fpul, pr, t	Special/control registers
+    
     There are also control registers, and system registers.  We might need to
     model some of those.
 *)
@@ -45,7 +47,11 @@ let float_reg_name = [|
   "dr0";  "dr1";  "dr2";  "dr3";  "dr4";  "dr5";  "dr6"; "dr7"
 |]
 
-let num_register_classes = 2
+let special_reg_name = [|
+  "macl"; "mach"; "fpul"; "pr"
+|]
+
+let num_register_classes = 3
 
 let register_class r =
   match r.typ with
@@ -53,12 +59,14 @@ let register_class r =
   | Addr -> 0
   | Float -> 1
 
-let num_available_registers = [| 12; 8 |]
+let num_available_registers = [| 12; 8; 4 |]
 
-let first_available_register = [| 0; 100 |]
+let first_available_register = [| 0; 100; 200 |]
 
 let register_name r =
-  if r < 100 then int_reg_name.(r) else float_reg_name.(r - 100)
+  if r < 100 then int_reg_name.(r) else
+  if r < 200 then float_reg_name.(r - 100) else
+  special_reg_name.(r - 200)
 
 let rotate_registers = true
 
@@ -74,11 +82,18 @@ let hard_float_reg =
   for i = 0 to 7 do v.(i) <- Reg.at_location Float (Reg(100 + i)) done;
   v
 
+let hard_special_reg =
+  let v = Array.create 5 Reg.dummy in
+  for i = 0 to 4 do v.(i) <- Reg.at_location Int (Reg(200 + i)) done;
+  v
+
 let all_phys_regs =
-  Array.append hard_int_reg hard_float_reg
+  Array.append (Array.append hard_int_reg hard_float_reg) hard_special_reg
 
 let phys_reg n =
-  if n < 100 then hard_int_reg.(n) else hard_float_reg.(n - 100)
+  if n < 100 then hard_int_reg.(n) else
+  if n < 200 then hard_float_reg.(n - 100) else
+  hard_special_reg.(n - 200)
 
 let stack_slot slot ty =
   Reg.at_location ty (Stack slot)
@@ -166,7 +181,8 @@ let loc_exn_bucket = phys_reg 0
 
 let destroyed_at_c_call =               (* r4-r9, d8-d15 preserved *)
   Array.of_list(List.map phys_reg [0;1;2;3;10;11;
-				   100;101;102;103;104;105;106;107])
+				   100;101;102;103;104;105;106;107;
+				   200;201;202;203])
 
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ | Iextcall(_, true)) -> all_phys_regs
@@ -182,18 +198,18 @@ let destroyed_at_oper = function
 
 let destroyed_at_raise = all_phys_regs
 
-(* Maximal register pressure *)
+(* Maximal register pressure (FIXME: I don't understand these) *)
 
 let safe_register_pressure = function
     Iextcall(_, _) -> 4
   | _ -> 12
 let max_register_pressure = function
-    Iextcall(_, _) -> [| 4; 4 |]
-  | _ -> [| 12; 8 |]
+    Iextcall(_, _) -> [| 4; 4; 0 |]
+  | _ -> [| 12; 8; 0 |]
 
 (* Layout of the stack *)
 
-let num_stack_slots = [| 0; 0 |]
+let num_stack_slots = [| 0; 0; 0 |]
 let contains_calls = ref false
 
 (* Calling the assembler *)

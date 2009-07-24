@@ -19,7 +19,7 @@ open Format
 
 let command_line_options = []
 
-(* Addressing modes *)
+(* Addressing modes. No support for @(R0+Rn) addresses for now. *)
 
 type addressing_mode =
     Iindirect				(* reg *)
@@ -28,7 +28,7 @@ type addressing_mode =
 (* Specific operations *)
 
 type specific_operation =
-    Ixtrct
+    Istore_postinc of Cmm.memory_chunk
 
 and arith_operation = unit
 
@@ -44,10 +44,13 @@ let size_float = 8
 
 let identity_addressing = Iindirect
 
+(* Note: this is used to generate reg+offset addresses, where offset is a
+   (small) negative integer. We can't support those cases. *)
+
 let offset_addressing addrmode delta =
   match addrmode with
-    Iindexed n -> Iindexed (n + delta)
-  | Iindirect -> Iindexed (delta)
+    Iindexed n -> if n >= 0 then Iindexed (n + delta) else assert false
+  | Iindirect -> if delta >= 0 then Iindexed (delta) else assert false
 
 let num_args_addressing = function
     Iindexed _ -> 1
