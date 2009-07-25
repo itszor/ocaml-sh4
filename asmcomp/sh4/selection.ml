@@ -40,7 +40,7 @@ let macl = phys_reg 200  (* FIXME! *)
 let pseudoregs_for_operation op arg res =
   match op with
     (* Two-address binary operations *)
-    Iintop(Ilsl|Ilsr|Iasr|Iadd|Isub|Iand|Ior|Ixor) ->
+    Iintop(Ilsl|Ilsr|Iasr|Iadd|Isub|Iand|Ior|Ixor|Idiv|Imod) ->
       ([|res.(0); arg.(1)|], res, false)
   | Iintop(Imul) ->
       (arg, [|macl|], true)
@@ -48,6 +48,8 @@ let pseudoregs_for_operation op arg res =
       (res, res, false)
   | Iintop_imm((Iand|Ior|Ixor), _) ->
       ([|r0|], [|r0|], true)
+  | Iintop_imm(Icomp _, _) ->
+      ([|r0|], res, false)
   | Inegf | Iabsf ->
       (res, res, false)
   | Iaddf | Isubf | Imulf | Idivf ->
@@ -58,7 +60,7 @@ let pseudoregs_for_operation op arg res =
 
 let pseudoregs_for_test op arg =
   match op with
-    Itruetest | Ifalsetest
+    Itruetest | Ifalsetest | Ioddtest | Ieventest
   | Iinttest_imm ((Isigned Ceq | Isigned Cne
                    | Iunsigned Ceq | Iunsigned Cne), _) ->
       [|r0|]
@@ -117,8 +119,8 @@ method select_operation op args =
       | _ -> (Iintop Iasr, args)
       end
   | Ccheckbound _, _ -> (Iintop Icheckbound, args)
-  | Cmodi, _ -> (Iintop Imod, args)
-  | Cdivi, _ -> (Iintop Idiv, args)
+  | Cmodi, _ -> (Iextcall("__modsi3", false), args)
+  | Cdivi, _ -> (Iextcall("__divsi3", false), args)
   | Cmuli, _ -> (Iintop Imul, args)  (* FIXME: Won't ever use shifts! *)
   | Ccmpi cmp, _ ->
       begin match cmp with

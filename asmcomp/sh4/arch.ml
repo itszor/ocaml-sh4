@@ -27,8 +27,7 @@ type addressing_mode =
 
 (* Specific operations *)
 
-type specific_operation =
-    Istore_postinc of Cmm.memory_chunk
+type specific_operation = unit
 
 and arith_operation = unit
 

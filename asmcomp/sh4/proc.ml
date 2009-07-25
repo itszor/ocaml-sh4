@@ -25,26 +25,40 @@ let word_addressed = false
 (* Registers available for register allocation *)
 
 (* Register map (in progress!)
-    r0 - r11                    general purpose  (r11 for caml_c_call temp)
+    r0 - r9                     general purpose
+    r10 - r11			temporaries
     r12                         allocation pointer
     r13                         allocation limit
     r14                         trap pointer
     r15                         stack pointer
 
-    dr0-dr7			Double-precision float registers
+    dr0, dr2...dr14		Double-precision float registers
     
     macl, mach, fpul, pr, t	Special/control registers
     
-    There are also control registers, and system registers.  We might need to
-    model some of those.
+   Special registers are only ever used when they are referred to directly.
+   
+   The C calling conventions on SH4 are:
+   
+    r0 - r3			Return value, caller save
+    r4 - r7			Parameter passing, caller save
+    r8 - r13			Callee save
+    r12				Global context pointer, callee save
+    r14				Frame pointer, callee save
+    r15				Stack pointer
+    
+    fr0 - fr3			Return value, caller save (dr0, dr2)
+    fr4 - fr11			Parameter passing, caller save
+				(dr4, dr6, dr8, dr10)
+    fr12 - fr15			Callee save (dr12, dr14)
 *)
 
 let int_reg_name = [|
-  "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r8"; "r9"; "r10"; "r11"
+  "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r8"; "r9"
 |]
 
 let float_reg_name = [|
-  "dr0";  "dr1";  "dr2";  "dr3";  "dr4";  "dr5";  "dr6"; "dr7"
+  "dr0";  "dr2";  "dr4";  "dr6";  "dr8";  "dr10";  "dr12"; "dr14"
 |]
 
 let special_reg_name = [|
@@ -59,7 +73,7 @@ let register_class r =
   | Addr -> 0
   | Float -> 1
 
-let num_available_registers = [| 12; 8; 4 |]
+let num_available_registers = [| 10; 8; 0 |]
 
 let first_available_register = [| 0; 100; 200 |]
 
@@ -73,8 +87,8 @@ let rotate_registers = true
 (* Representation of hard registers by pseudo-registers *)
 
 let hard_int_reg =
-  let v = Array.create 12 Reg.dummy in
-  for i = 0 to 11 do v.(i) <- Reg.at_location Int (Reg i) done;
+  let v = Array.create 10 Reg.dummy in
+  for i = 0 to 9 do v.(i) <- Reg.at_location Int (Reg i) done;
   v
 
 let hard_float_reg =
@@ -83,8 +97,8 @@ let hard_float_reg =
   v
 
 let hard_special_reg =
-  let v = Array.create 5 Reg.dummy in
-  for i = 0 to 4 do v.(i) <- Reg.at_location Int (Reg(200 + i)) done;
+  let v = Array.create 4 Reg.dummy in
+  for i = 0 to 3 do v.(i) <- Reg.at_location Int (Reg(200 + i)) done;
   v
 
 let all_phys_regs =
@@ -131,28 +145,24 @@ let incoming ofs = Incoming ofs
 let outgoing ofs = Outgoing ofs
 let not_supported ofs = fatal_error "Proc.loc_results: cannot call"
 
-(* FIXME for SH4 ABI! *)
+(* Use r0-r7, dr0-dr5 for arguments and results. Chosen somewhat arbitrarily --
+   probably worth experimenting with different values. *)
 
 let loc_arguments arg =
-  calling_conventions 0 7 100 107 outgoing arg
+  calling_conventions 0 7 100 105 outgoing arg
 let loc_parameters arg =
-  let (loc, ofs) = calling_conventions 0 7 100 107 incoming arg in loc
+  let (loc, ofs) = calling_conventions 0 7 100 105 incoming arg in loc
 let loc_results res =
-  let (loc, ofs) = calling_conventions 0 7 100 107 not_supported res in loc
-
-(* Calling conventions for C are as for Caml, except that float arguments
-   are passed in pairs of integer registers. *)
-
-(* FIXME for SH4 ABI! *)
+  let (loc, ofs) = calling_conventions 0 7 100 105 not_supported res in loc
 
 let loc_external_arguments arg =
   let loc = Array.create (Array.length arg) Reg.dummy in
-  let reg = ref 0 in
-  let ofs = ref 0 in
+  let reg = ref 4 in
+  let ofs = ref 102 in
   for i = 0 to Array.length arg - 1 do
     match arg.(i).typ with
       Int | Addr as ty ->
-        if !reg <= 3 then begin
+        if !reg <= 7 then begin
           loc.(i) <- phys_reg !reg;
           incr reg
         end else begin
@@ -160,15 +170,17 @@ let loc_external_arguments arg =
           ofs := !ofs + size_int
         end
     | Float ->
-        if !reg <= 2 then begin
+        if !reg <= 105 then begin
           loc.(i) <- phys_reg !reg;
-          reg := !reg + 2
+          incr reg
         end else begin
           loc.(i) <- stack_slot (outgoing !ofs) Float;
           ofs := !ofs + size_float
         end
   done;
   (loc, !ofs)
+
+(* Return in r0/fr0 for int/float. *)
 
 let loc_external_results res =
   let (loc, ofs) = calling_conventions 0 0 100 100 not_supported res in loc
@@ -179,9 +191,9 @@ let loc_exn_bucket = phys_reg 0
 
 (* FIXME for SH4! *)
 
-let destroyed_at_c_call =               (* r4-r9, d8-d15 preserved *)
-  Array.of_list(List.map phys_reg [0;1;2;3;10;11;
-				   100;101;102;103;104;105;106;107;
+let destroyed_at_c_call =
+  Array.of_list(List.map phys_reg [0;1;2;3;4;5;6;7;
+				   100;101;102;103;104;105;
 				   200;201;202;203])
 
 let destroyed_at_oper = function
@@ -192,7 +204,6 @@ let destroyed_at_oper = function
   | Iop(Itailcall_imm _)
   | Iop(Istackoffset _)
   | Iop(Iconst_float _)-> [|phys_reg 0|]
-  | Iop(Iintop(Icheckbound)) -> [|phys_reg 11|]  (* r11 used as temp *)
   | Iop(Ialloc(_)) -> [||]    (* FIXME: Whatever is destroyed by alloc *)
   | _ -> [||]
 
@@ -205,7 +216,7 @@ let safe_register_pressure = function
   | _ -> 12
 let max_register_pressure = function
     Iextcall(_, _) -> [| 4; 4; 0 |]
-  | _ -> [| 12; 8; 0 |]
+  | _ -> [| 10; 8; 0 |]
 
 (* Layout of the stack *)
 
