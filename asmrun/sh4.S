@@ -9,6 +9,7 @@
 caml_call_gc:
 	/* FIXME: Not implemented. */
 	rts
+	nop	! delay slot
 
 	/* Call a C function from OCaml. Function to call is in r11.
 	   The callee preserves r8-r15. r8-r11 are good to use as
@@ -27,7 +28,7 @@ caml_c_call:
 	mov.l	r15, @r9
 
 	/* Make the exception handler and alloc ptr available to the C code */
-	mov.l	.Lcaml_exception_ptr, r9
+	mov.l	.Lcaml_exception_pointer, r9
 	mov.l	trap_ptr, @r9
 	mov.l	.Lcaml_young_ptr, r9
 
@@ -53,7 +54,8 @@ caml_allocN:
 	rts
 	nop	! delay slot
 
-.Lcaml_last_return_address	.long	caml_last_return_address
-.Lcaml_young_ptr		.long	caml_young_ptr
-.Lcaml_exception_pointer	.long	caml_exception_pointer
-.Lcaml_bottom_of_stack		.long	caml_bottom_of_stack
+	.align 2
+.Lcaml_last_return_address:	.long	caml_last_return_address
+.Lcaml_young_ptr:		.long	caml_young_ptr
+.Lcaml_exception_pointer:	.long	caml_exception_pointer
+.Lcaml_bottom_of_stack:		.long	caml_bottom_of_stack

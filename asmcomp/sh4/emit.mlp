@@ -26,6 +26,9 @@ open Emitaux
 
 let fastcode_flag = ref true
 
+type 'a delayed_insn =
+    Insn of int * 'a * (unit -> unit)
+
 (* Output a label *)
 
 let label_prefix =
@@ -307,13 +310,13 @@ type t_or_p = Temp of string | Phys of int
 (* Emit either physical or temporary registers. *)
 
 let emit_temp_or_phys = function
-    Phys r -> `{emit_reg (phys_reg r)}`
-  | Temp r -> `{emit_string r}`
+    Phys r -> emit_reg (phys_reg r)
+  | Temp r -> emit_string r
 
-(* Return a temporary to use for register argument. This implies a certain usage
-   pattern: there are two temporaries r11 and r10, and r11 is usually used in
-   preference. r10 is returned as a secondary temporary if r11 is already in
-   use.  *)
+(* Return a temporary which can be safely used in an operation using the
+   register argument. This implies a certain usage pattern: there are two
+   temporaries r11 and r10, and r11 is usually used in preference. r10 is
+   returned as a secondary temporary if r11 is already in use.  *)
 
 let temp_for_reg = function
     Phys _ -> Temp "r11"
@@ -330,7 +333,8 @@ let temp_for_reg = function
      - can load some permuted constants using extra swap.b, swap.w.
 
    All of these will take 4 bytes in total, vs. 6 for mov.l + constant pool
-   entry, and potentially save icache space too.
+   entry, and potentially save icache space too (by preventing pollution with
+   pool entries which overlap cache lines with code).
 *)
 
 let load_const imm reg =
@@ -393,9 +397,18 @@ let opcode_for_mov rs rd =
   | Tspecial, Tint -> "sts"
   | _ -> assert false
 
+(* List of pending instructions *)
+
+let insns = ref []
+
+let clear_insns () =
+  insns := []
+
 (* Output the assembly code for an instruction *)
 
 let emit_instr i =
+  let acc_insns n delayed_insns =
+    insns := Insn (n, i, delayed_insns) :: !insns; n in
   match i.desc with
     Lend -> 0
   | Lop(Imove | Ispill | Ireload) ->
@@ -576,17 +589,21 @@ let emit_instr i =
       and r = i.arg.(0) in
       begin match addr with
         Iindirect | Iindexed 0 ->
+	  acc_insns 3 (fun () ->
 	  `	add	#4, {emit_reg a}\n`;
 	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
-	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`; 3
+	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`)
       | Iindexed n ->
+          let need_offset = (4 + n) != 0 in
+	  let num_insns = if need_offset then 4 else 3 in
           (* emit_stores creates floating-point stores with small offsets. Deal
 	     with that here, though it's not very efficient to do so. *)
-	  if (4 + n) != 0 then
-	    `	add	#{emit_int (4 + n)}, {emit_reg a}\n`;
-	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
-	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
-	  `	add	#{emit_int (-n)}, {emit_reg a}\n`; 4
+	  acc_insns num_insns (fun () ->
+	    if need_offset then
+	      `	add	#{emit_int (4 + n)}, {emit_reg a}\n`;
+	    `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
+	    `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
+	    `	add	#{emit_int (-n)}, {emit_reg a}\n`)
       end
   | Lop(Istore(size, addr)) ->
       let r = i.arg.(0) in
@@ -609,7 +626,7 @@ let emit_instr i =
       `	add	#4, alloc_ptr\n`;
       6
   | Lop(Iintop Ilsl) ->
-      (* i.res.(0) = i.arg.(0). *)
+      assert (i.res.(0).loc = i.arg.(0).loc);
       `	shld	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
   | Lop(Iintop(Ilsr | Iasr as op)) ->
       (* FIXME: Potentially suboptimal (we might be able to fold the neg into
@@ -650,11 +667,11 @@ let emit_instr i =
   | Lop(Iintop Idiv)
   | Lop(Iintop Imod) -> assert false  (* Handled with library calls *)
   | Lop(Iintop op) ->
+      assert (i.arg.(0).loc = i.res.(0).loc);
       let instr = name_for_int_operation op in
-      (* i.arg.(0) must equal i.res.(0). *)
       `	{emit_string instr}	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
   | Lop(Iintop_imm((Ilsl | Ilsr as op), n)) ->
-      (* i.arg.(0) should equal i.res.(0). *)
+      assert (i.arg.(0).loc = i.res.(0).loc);
       (* Might sometimes be better to not expand immediate shifts like this, and
          use dynamic shift instruction instead. *)
       let rec emit_imm_shift n =
@@ -672,7 +689,7 @@ let emit_instr i =
 	  0 in
       emit_imm_shift n
   | Lop(Iintop_imm(Iasr, 1)) ->
-      (* i.arg.(0) should equal i.res.(0). *)
+      assert (i.arg.(0).loc = i.res.(0).loc);
       `	shar	{emit_reg i.res.(0)}\n`; 1
   | Lop(Iintop_imm(Icomp (Isigned Ceq | Iunsigned Ceq
 			  | Isigned Cne | Iunsigned Cne as cmp), n)) ->
@@ -688,13 +705,25 @@ let emit_instr i =
 	  `	negc	{emit_reg i.res.(0)}, {emit_reg i.res.(0)}\n`; 3
       | Flipped | InvFlipped -> assert false
       end
+  | Lop(Iintop_imm(Iadd, n)) when i.res.(0).loc <> i.arg.(0).loc ->
+      (* This seems to be generated, though I don't think it should be. Do the
+         best we can: copy result register then operate on it. *)
+      `	mov	{emit_reg i.arg.(0)}, {emit_reg i.res.(0)}\n`;
+      `	add	#{emit_int n}, {emit_reg i.res.(0)}\n`; 2
   | Lop(Iintop_imm((Iadd | Iand | Ior | Ixor as op), n)) ->
-      (* For Iand, Ior, Ixor, i.res.(0) = i.arg.(0) = r0.
-         For Iadd, i.res.(0) = i.arg.(0). *)
+      begin try
+        assert (i.res.(0).loc = i.arg.(0).loc);
+      with Assert_failure _ ->
+        assert false
+      end;
+      begin match op with
+        Iand | Ior | Ixor -> assert (i.res.(0).loc = Reg 0)
+      | _ -> ()
+      end;
       let instr = name_for_int_operation op in
       `	{emit_string	instr}	#{emit_int n}, {emit_reg i.res.(0)}\n`; 1
   | Lop(Inegf | Iabsf as op) ->
-      (* i.arg.(0) = i.res.(0). *)
+      assert (i.arg.(0).loc = i.res.(0).loc);
       let instr = name_for_float_operation op in
       `	{emit_string	instr}	{emit_reg i.res.(0)}\n`; 1
   | Lop(Ifloatofint) ->
@@ -704,7 +733,7 @@ let emit_instr i =
       `	ftrc	{emit_reg i.arg.(0)}, fpul\n`;
       `	sts	fpul, {emit_reg i.res.(0)}\n`; 2
   | Lop(Iaddf | Isubf | Imulf | Idivf as op) ->
-      (* i.arg.(0) = i.res.(0). *)
+      assert (i.arg.(0).loc = i.res.(0).loc);
       let instr = name_for_float_operation op in
       `	{emit_string	instr}	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
   | Lop(Ispecific _) ->
@@ -794,7 +823,9 @@ let emit_instr i =
 	  `	bt	{emit_label lbl}\n`; 2
       end
   | Lcondbranch3(lbl0, lbl1, lbl2) ->
-      (* Uses r11 as temp *)
+      (* Compare for less than/equal/greater than 1, branching to
+         lbl0/lbl1/lbl2 respectively depending on which is true. Note abuse of
+	 dt. Uses r11 as temp. *)
       `	mov	{emit_reg i.arg.(0)}, r11\n`;
       `	dt	r11\n`;
       begin match lbl1 with

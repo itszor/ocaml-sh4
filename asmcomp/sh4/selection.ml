@@ -32,6 +32,7 @@ let is_offset n =
 exception Use_default
 
 let r0 = phys_reg 0
+let r1 = phys_reg 1
 let macl = phys_reg 200  (* FIXME! *)
 
 (* For operation OP with args ARG and result RES, return:
@@ -87,8 +88,6 @@ method is_offset n =
 method select_addressing = function
     Cop(Cadda, [arg; Cconst_int n]) when is_offset n ->
       (Iindexed n, arg)
-  | Cop(Cadda, [arg1; Cop(Caddi, [arg2; Cconst_int n])]) when is_offset n ->
-      (Iindexed n, Cop(Cadda, [arg1; arg2]))
   | arg ->
       (Iindirect, arg)
 
