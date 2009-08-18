@@ -56,19 +56,19 @@ sed -e 's,^\(BINDIR\)=\(.*\),\1='"$PREFIX"/bin',' \
     -e 's,^#\(TARGETRANLIB\)=\(ar rs\),\1='"$CROSS_COMPILE"'ar rs,' \
     -e 's,^#\(TARGETAR\)=\(.*\),\1='"$CROSS_COMPILE"'ar,' \
     -e 's,^#\(AS\)=as$,ASM='"$CROSS_COMPILE"'gcc -c -x assembler-with-cpp,' \
-    -e 's,^#\(ASPP\)=gcc -c$,\1='"$CROSS_COMPILE"'gcc -c,' \
+    -e 's|^#\(ASPP\)=gcc -c$|\1='"$CROSS_COMPILE"'gcc -m4 -c|' \
     -e 's,^#\(BYTECC\)=gcc$,\1=gcc,' \
     -e 's|^#\(BYTECCRPATH\)=\(-Wl,-rpath\)$|\1=|' \
-    -e 's,^#\(NATIVECC\)=gcc$,\1='"$CROSS_COMPILE"'gcc,' \
+    -e 's,^#\(NATIVECC\)=gcc$,\1='"$CROSS_COMPILE"'gcc -m4,' \
     -e 's,^#\(NATIVECCLINKOPTS=\)$,\1,' \
     -e 's|^#\(NATIVECCRPATH\)=\(-Wl,-rpath\)$|\1=|' \
     -e 's,^\(PARTIALLD\)=\(.*\),\1='"$CROSS_COMPILE"'ld -r $(NATIVECCLINKOPTS),' \
     -e 's,^#\(MKEXE\)=\(.*\),\1=gcc,' \
     -e 's,^#\(MKDLL\)=\(.*\),\1=gcc -shared,' \
     -e 's,^#\(MKMAINDLL\)=\(.*\),\1=gcc -shared,' \
-    -e 's,^#\(TARGETMKEXE\)=\(.*\),\1='"$CROSS_COMPILE"'gcc,' \
-    -e 's,^#\(TARGETMKDLL\)=\(.*\),\1='"$CROSS_COMPILE"'gcc -shared,' \
-    -e 's,^#\(TARGETMKMAINDLL\)=\(.*\),\1='"$CROSS_COMPILE"'gcc -shared,' \
+    -e 's,^#\(TARGETMKEXE\)=\(.*\),\1='"$CROSS_COMPILE"'gcc -m4,' \
+    -e 's,^#\(TARGETMKDLL\)=\(.*\),\1='"$CROSS_COMPILE"'gcc -m4 -shared,' \
+    -e 's,^#\(TARGETMKMAINDLL\)=\(.*\),\1='"$CROSS_COMPILE"'gcc -m4 -shared,' \
     -e 's,^#\(PTHREAD_LINK=-cclib -lpthread\)$,\1,' \
     -e 's,^#\(SO=so\)$,\1,' \
     -e 's,^#\(CUSTOM_IF_NOT_SHARED=\)$,\1,' \
@@ -76,7 +76,7 @@ sed -e 's,^\(BINDIR\)=\(.*\),\1='"$PREFIX"/bin',' \
     -e 's,^#\(CCLIBS\)=\(.*\)$,\1=\2,' \
     -e 's,^#\(SHAREDCCCOMPOPTS=-fPIC\)$,\1,' \
     -e 's,^#\(PROFILING=noprof\)$,\1,' \
-    -e 's,^#\(MKSHAREDLIB\)=\(gcc -shared -o\)$,\1='"$CROSS_COMPILE"'gcc -shared -o,' \
+    -e 's,^#\(MKSHAREDLIB\)=\(gcc -shared -o\)$,\1='"$CROSS_COMPILE"'gcc -m4 -shared -o,' \
     -e 's,^\(OTHERLIBRARIES\)=\(.*\)$,\1=unix str num threads dynlink bigarray,' \
     < "$OCAMLSRC"/config/Makefile-templ > "$OCAMLSRC"/config/Makefile
 

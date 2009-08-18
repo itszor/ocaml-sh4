@@ -362,6 +362,7 @@ let add_const imm reg =
    temp if necessary. *)
 
 let emit_stack_adjustment imm =
+  assert (((Nativeint.to_int imm) land 3) == 0);
   add_const imm (Temp "r15")
 
 let is_offset n =
@@ -407,8 +408,6 @@ let clear_insns () =
 (* Output the assembly code for an instruction *)
 
 let emit_instr i =
-  let acc_insns n delayed_insns =
-    insns := Insn (n, i, delayed_insns) :: !insns; n in
   match i.desc with
     Lend -> 0
   | Lop(Imove | Ispill | Ireload) ->
@@ -542,7 +541,12 @@ let emit_instr i =
 	`	nop	! delay slot\n`; 3
       end
   | Lop(Istackoffset n) ->
-      let ninstr = emit_stack_adjustment (Nativeint.of_int n) in
+      let ninstr =
+        try
+	  emit_stack_adjustment (Nativeint.of_int (-n))
+	with Assert_failure _ ->
+	  assert false
+	in
       stack_offset := !stack_offset + n;
       ninstr
   | Lop(Iload(Single, addr)) ->
@@ -589,21 +593,19 @@ let emit_instr i =
       and r = i.arg.(0) in
       begin match addr with
         Iindirect | Iindexed 0 ->
-	  acc_insns 3 (fun () ->
 	  `	add	#4, {emit_reg a}\n`;
 	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
-	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`)
+	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`; 3
       | Iindexed n ->
           let need_offset = (4 + n) != 0 in
 	  let num_insns = if need_offset then 4 else 3 in
           (* emit_stores creates floating-point stores with small offsets. Deal
 	     with that here, though it's not very efficient to do so. *)
-	  acc_insns num_insns (fun () ->
-	    if need_offset then
-	      `	add	#{emit_int (4 + n)}, {emit_reg a}\n`;
-	    `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
-	    `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
-	    `	add	#{emit_int (-n)}, {emit_reg a}\n`)
+	  if need_offset then
+	    `	add	#{emit_int (4 + n)}, {emit_reg a}\n`;
+	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
+	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
+	  `	add	#{emit_int (-n)}, {emit_reg a}\n`; num_insns
       end
   | Lop(Istore(size, addr)) ->
       let r = i.arg.(0) in
@@ -870,19 +872,19 @@ let emit_instr i =
       stack_offset := !stack_offset + 8;
       `	sts.l	pr, @-r15\n`;
       `	mov.l	trap_ptr, @-r15\n`;
-      `	mov	trap_ptr, r15\n`; 3
+      `	mov	r15, trap_ptr\n`; 3
   | Lpoptrap ->
       `	mov.l	@r15+, trap_ptr\n`;
       `	lds.l	@r15+, pr\n`;
       stack_offset := !stack_offset - 8; 2
   | Lraise ->
-      (* Clobbers PR. *)
+      (* Avoids clobbering PR. *)
       `	mov	trap_ptr, r15\n`;
       (* If these were the other way round, we could put one of the pops in the
          delay slot. *)
       `	mov.l	@r15+, trap_ptr\n`;
-      `	lds.l	@r15+, pr\n`;
-      `	rts\n`;
+      `	mov.l	@r15+, r11\n`;
+      `	jmp	@r11\n`;
       `	nop	! delay slot\n`; 5  (* FIXME: Delay slot. *)
 
 (* Emission of an instruction sequence *)

@@ -118,8 +118,8 @@ method select_operation op args =
       | _ -> (Iintop Iasr, args)
       end
   | Ccheckbound _, _ -> (Iintop Icheckbound, args)
-  | Cmodi, _ -> (Iextcall("__modsi3", false), args)
-  | Cdivi, _ -> (Iextcall("__divsi3", false), args)
+  | Cmodi, _ -> (Iextcall("caml_smodsi3", false), args)
+  | Cdivi, _ -> (Iextcall("__sdivsi3_i4i", false), args)
   | Cmuli, _ -> (Iintop Imul, args)  (* FIXME: Won't ever use shifts! *)
   | Ccmpi cmp, _ ->
       begin match cmp with

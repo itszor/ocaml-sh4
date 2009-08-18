@@ -88,6 +88,12 @@
 #define Callback_link(sp) ((struct caml_context *)((sp) + 16))
 #endif
 
+#ifdef TARGET_sh4
+/* FIXME: Are these right? */
+#define Saved_return_address(sp) *((intnat *)((sp) - 4))
+#define Callback_link(sp) ((struct caml_context *)((sp) + 8))
+#endif
+
 /* Structure of Caml callback contexts */
 
 struct caml_context {

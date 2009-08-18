@@ -157,22 +157,25 @@ let loc_results res =
 
 let loc_external_arguments arg =
   let loc = Array.create (Array.length arg) Reg.dummy in
-  let reg = ref 4 in
-  let ofs = ref 102 in
+  let ireg = ref 4
+  and freg = ref 2 in
+  let ofs = ref 0 in
   for i = 0 to Array.length arg - 1 do
     match arg.(i).typ with
       Int | Addr as ty ->
-        if !reg <= 7 then begin
-          loc.(i) <- phys_reg !reg;
-          incr reg
+        if !ireg <= 7 then begin
+          loc.(i) <- phys_reg !ireg;
+          incr ireg
         end else begin
           loc.(i) <- stack_slot (outgoing !ofs) ty;
           ofs := !ofs + size_int
         end
     | Float ->
-        if !reg <= 105 then begin
-          loc.(i) <- phys_reg !reg;
-          incr reg
+        (* Float registers fr4-fr11 are used for argument passing.  In our
+	   numbering scheme, those are registers 102..105. *)
+        if !freg <= 5 then begin
+          loc.(i) <- phys_reg (!freg + 100);
+          incr freg
         end else begin
           loc.(i) <- stack_slot (outgoing !ofs) Float;
           ofs := !ofs + size_float
