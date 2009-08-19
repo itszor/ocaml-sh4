@@ -135,6 +135,9 @@ let emit_addressing addr r n =
     Iindirect | Iindexed 0 -> `@{emit_reg r.(n)}`
   | Iindexed ofs -> `@({emit_int ofs},{emit_reg r.(n)})`
 
+let emit_predec_addr r n =
+  `@-{emit_reg r.(n)}`
+
 (* Record live pointers at call points *)
 
 type frame_descr =
@@ -189,12 +192,12 @@ let name_for_comparison = function
   | Isigned Cne | Iunsigned Cne -> "eq", Inverted
   | Isigned Cge -> "ge", Normal
   | Isigned Cgt -> "gt", Normal
-  | Isigned Clt -> "ge", Flipped
-  | Isigned Cle -> "gt", Flipped
+  | Isigned Cle -> "ge", Flipped
+  | Isigned Clt -> "gt", Flipped
   | Iunsigned Cge -> "hs", Normal
   | Iunsigned Cgt -> "hi", Normal
-  | Iunsigned Clt -> "hs", Flipped
-  | Iunsigned Cle -> "hi", Flipped
+  | Iunsigned Cle -> "hs", Flipped
+  | Iunsigned Clt -> "hi", Flipped
 
 let name_for_int_operation = function
     Iadd -> "add"
@@ -658,7 +661,9 @@ let emit_instr i =
       let bnd = label_constant symbol_constants "caml_ml_array_bound_error" 2 in
       let skip = new_label () in
       `	cmp/hi	{emit_reg i.arg.(1)}, {emit_reg i.arg.(0)}\n`;
-      `	bf	{emit_label skip}\n`;
+      (* arg0 >u arg1? *)
+      `	bt	{emit_label skip}\n`;
+      (* !(arg0 >u arg1) -> arg0 <=u arg1. *)
       `	mov.l	{emit_label bnd}, r11\n`;
       `	jsr	@r11	! {emit_string "caml_ml_array_bound_error"}\n`;
       `	nop	! delay slot\n`;
@@ -738,8 +743,13 @@ let emit_instr i =
       assert (i.arg.(0).loc = i.res.(0).loc);
       let instr = name_for_float_operation op in
       `	{emit_string	instr}	{emit_reg i.arg.(1)}, {emit_reg i.res.(0)}\n`; 1
-  | Lop(Ispecific _) ->
-      assert false
+  | Lop(Ispecific Istore_int_predec) ->
+      `	mov.l	{emit_reg i.arg.(0)}, {emit_predec_addr i.arg 1}\n`; 1
+  | Lop(Ispecific Istore_double_predec) ->
+      (* I think this needs to be done in two parts, unless we flip the
+         appropriate bit in the FPU status register. *)
+      `	fmov.s	{emit_float_high i.arg.(0)}, {emit_predec_addr i.arg 1}\n`;
+      `	fmov.s	{emit_float_low i.arg.(0)}, {emit_predec_addr i.arg 1}\n`; 2
   | Lop(Iintop_imm((Icheckbound | Imod | Idiv | Imul | Isub), _))
   | Lop(Iintop_imm(Iasr, _))
   | Lop(Iintop_imm(Icomp(Isigned(Cge | Cgt | Cle | Clt)), _))
@@ -975,7 +985,7 @@ let emit_item = function
   | Clabel_address lbl ->
       `	.long	{emit_label (10000 + lbl)}\n`
   | Cstring s ->
-      emit_string_directive "   .ascii  " s
+      emit_string_directive "	.ascii  " s
   | Cskip n ->
       if n > 0 then `	.space	{emit_int n}\n`
   | Calign n ->

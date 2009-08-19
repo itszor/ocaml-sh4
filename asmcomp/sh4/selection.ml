@@ -183,12 +183,67 @@ method insert_op_debug op dbg rs rd =
 method insert_op op rs rd =
   self#insert_op_debug op Debuginfo.none rs rd
 
+(* This is kind of hideous and wasteful. We can't find the size of the data
+   we're storing without actually emitting instructions, so we keep a copy of
+   the instruction stream before counting, then restore back to the same point
+   before exiting. *)
+
+method count_store_size env data =
+  let instr_seq_before = super#get_instr_seq in
+  let data_size = List.fold_right
+    (fun e total ->
+      let (op, arg) = self#select_store Arch.identity_addressing e in
+      match self#emit_expr env arg with
+        None -> assert false
+      | Some regs ->
+          begin match op with
+	    Istore(_, _) ->
+	      let these_regs =
+	        Array.fold_right
+	          (fun reg acc -> acc + size_component reg.typ)
+		  regs
+		  0 in
+	      total + these_regs
+	  | _ -> assert false
+	  end)
+    data
+    0 in
+  super#put_instr_seq instr_seq_before;
+  data_size
+
 (* The generic version of this method requires that arch#offset_addressing is
-   able to create (reg-immediate) addresses, for small values of immediate.
-   That's not possible for SH4, so this version avoids using that type of
-   address (but is otherwise identical). Could possibly do better than this. *)
+   able to create (reg-minus-immediate) addresses, for small values of
+   immediate. That's not possible for SH4, so this version avoids using that
+   type of address.
+
+   Because of the limited displacement available for stores, we really want
+   to use post-increment stores here.  Unfortunately on SH4 we only have
+   pre-decrement stores, so we have to calculate the last address and work
+   backwards. *)
 
 method emit_stores env data regs_addr =
+  let clob_regs_addr = Reg.createv typ_int in
+  (* We clobber regs_addr, so make a copy *)
+  self#insert_moves regs_addr clob_regs_addr;
+  let data_size = self#count_store_size env data in
+  ignore(self#insert_op (Iintop_imm(Iadd, (data_size - 4))) clob_regs_addr
+			clob_regs_addr);
+  List.iter
+    (fun expr ->
+      match self#emit_expr env expr with
+        None -> assert false
+      | Some regs ->
+	  for i = Array.length regs - 1 downto 0 do
+	    let r = regs.(i) in
+	    let kind = if r.typ = Float then Istore_double_predec
+					else Istore_int_predec in
+	    ignore(self#insert_op (Ispecific kind)
+				  (Array.append [|r|] clob_regs_addr)
+				  clob_regs_addr)
+	  done)
+    (List.rev data)
+
+method emit_stores1 env data regs_addr =
   let a = ref Arch.identity_addressing in
   let clob_regs_addr = Reg.createv typ_int in
   (* We clobber regs_addr, so make a copy *)

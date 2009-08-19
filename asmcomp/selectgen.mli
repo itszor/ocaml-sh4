@@ -65,6 +65,8 @@ class virtual selector_generic : object
   method insert : Mach.instruction_desc -> Reg.t array -> Reg.t array -> unit
   method insert_debug : Mach.instruction_desc -> Debuginfo.t ->
                                         Reg.t array -> Reg.t array -> unit
+  method get_instr_seq : Mach.instruction
+  method put_instr_seq : Mach.instruction -> unit
   method insert_move : Reg.t -> Reg.t -> unit
   method insert_move_args : Reg.t array -> Reg.t array -> int -> unit
   method insert_move_results : Reg.t array -> Reg.t array -> int -> unit

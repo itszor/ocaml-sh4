@@ -27,7 +27,9 @@ type addressing_mode =
 
 (* Specific operations *)
 
-type specific_operation = unit
+type specific_operation =
+    Istore_int_predec
+  | Istore_double_predec
 
 and arith_operation = unit
 
