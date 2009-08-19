@@ -352,14 +352,6 @@ method extract =
     else extract {i with next = res} i.next in
   extract (end_instr()) instr_seq
 
-(* Accessors for instr_seq *)
-
-method get_instr_seq =
-  instr_seq
-
-method put_instr_seq seq =
-  instr_seq <- seq
-
 (* Insert a sequence of moves from one pseudoreg set to another. *)
 
 method insert_move src dst =

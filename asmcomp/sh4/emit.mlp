@@ -126,7 +126,7 @@ let add_stack_offset r plus pr_targ =
         `	add	#{emit_int (ofs + plus)}, {pr_targ ()}\n`; 1
       end else
         0
-  | _ -> fatal_error "Emit_sh4.emit_stack_offset"
+  | _ -> fatal_error "Emit_sh4.add_stack_offset"
 
 (* Output an addressing mode *)
 
@@ -599,7 +599,8 @@ let emit_instr i =
 	  `	add	#4, {emit_reg a}\n`;
 	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
 	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`; 3
-      | Iindexed n ->
+      | Iindexed n -> assert false
+          (*
           let need_offset = (4 + n) != 0 in
 	  let num_insns = if need_offset then 4 else 3 in
           (* emit_stores creates floating-point stores with small offsets. Deal
@@ -609,6 +610,7 @@ let emit_instr i =
 	  `	fmov.s	{emit_float_high r}, @{emit_reg a}\n`;
 	  `	fmov.s	{emit_float_low r}, @-{emit_reg a}\n`;
 	  `	add	#{emit_int (-n)}, {emit_reg a}\n`; num_insns
+	  *)
       end
   | Lop(Istore(size, addr)) ->
       let r = i.arg.(0) in
@@ -628,7 +630,7 @@ let emit_instr i =
       `{record_frame i.live}	jsr	@r11	! {emit_string "caml_allocN"}\n`;
       `	nop	! delay slot\n`;
       `	mov	alloc_ptr, {emit_reg i.res.(0)}\n`;
-      `	add	#4, alloc_ptr\n`;
+      `	add	#4, {emit_reg i.res.(0)}\n`;
       6
   | Lop(Iintop Ilsl) ->
       assert (i.res.(0).loc = i.arg.(0).loc);

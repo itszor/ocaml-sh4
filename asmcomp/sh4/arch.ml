@@ -31,8 +31,6 @@ type specific_operation =
     Istore_int_predec
   | Istore_double_predec
 
-and arith_operation = unit
-
 (* Sizes, endianness *)
 
 let big_endian = false

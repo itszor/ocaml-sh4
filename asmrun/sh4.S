@@ -20,7 +20,7 @@ caml_c_call:
 	/* Return address in callee-save register. */
 	sts	pr, r8
 
-	/* Record lowest stack addres */
+	/* Record lowest stack address and return address */
 	mov.l	.Lcaml_bottom_of_stack, r9
 	mov.l	.Lcaml_last_return_address, r10
 	add	#4, r10
@@ -43,8 +43,7 @@ caml_c_call:
 	mov	#0, r9
 
 	/* Return. */
-	lds	r8, pr
-	rts
+	jmp	@r8
 	/* r10 is still caml_last_return_address */
 	mov.l	r9, @r10	! delay slot
 
@@ -152,16 +151,16 @@ invoke_gc:
 	/* Reload return address */
 	mov.l	.Lcaml_last_return_address, r10
 	lds.l	@r10+, pr
-	add	#-4, r10
 	/* Say that we are back into OCaml code */
 	mov	#0, alloc_ptr
-	mov.l	alloc_ptr, @r10
+	mov.l	alloc_ptr, @-r10
 	/* Reload new allocation pointer and allocation limit */
 	mov.l	.Lcaml_young_ptr, r10
 	mov.l	@r10, alloc_ptr
-	/* Return to caller */
 	mov.l	.Lcaml_young_limit, alloc_limit
-	rts
+	/* Return to caller (note: must preserve PR, so don't use rts!) */
+	mov.l	@r15+, r11
+	jmp	@r11
 	nop	! delay slot
 
 	.global caml_smodsi3
@@ -186,7 +185,7 @@ caml_smodsi3:
 	.global	caml_ml_array_bound_error
 caml_ml_array_bound_error:
 	mov.l	.Lcaml_array_bound_error, r11
-	jsr	@r11
+	bsr	caml_c_call
 	nop	! delay slot
 
 /* Start the OCaml program */
@@ -304,10 +303,9 @@ caml_raise_exception:
 	mov.l	.Lcaml_exception_pointer, r1
 	mov.l	@r1, r15
 	/* Pop previous handler and addr of trap, and jump to it */
-	/* Clobbers PR. Hope that's OK. */
 	mov.l	@r15+, trap_ptr
-	lds.l	@r15+, pr
-	rts
+	mov.l	@r15+, r11
+	jmp	@r11
 	nop	! delay slot
 
 /* Callback from C to OCaml */
