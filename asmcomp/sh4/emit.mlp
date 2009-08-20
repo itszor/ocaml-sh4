@@ -483,8 +483,10 @@ let emit_instr i =
       | _ ->
         let lbl = label_constant float_constants s 4 in
         pending_float := true;
+	(* Marked as destroying r0 in Proc.destroyed_at_oper. *)
 	`	mova	{emit_label lbl}, r0\n`;
-        `	fmov	@r0, {emit_reg r} ! {emit_string s}\n`; 2
+        `	fmov.s	@r0+, {emit_float_low r} ! {emit_string s}\n`;
+	`	fmov.s	@r0, {emit_float_high r}\n`; 3
       end
   | Lop(Iconst_symbol s) ->
       let lbl = label_constant symbol_constants s 2 in

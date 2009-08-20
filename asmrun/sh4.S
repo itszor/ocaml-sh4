@@ -72,8 +72,8 @@ beyond_alloc_limit:
 	mov.l	r10, @alloc_limit	! delay slot
 	/* Try again */
 	mov.l	.Lcaml_requested_size, r10
-	mov.l	@r10, r10
 	bra	caml_allocN
+	mov.l	@r10, r10		! delay slot
 
 invoke_gc:
 	/* Record lowest stack address */

@@ -202,12 +202,9 @@ let destroyed_at_c_call =
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ | Iextcall(_, true)) -> all_phys_regs
   | Iop(Iextcall(_, false)) -> destroyed_at_c_call
-  (* r0 used as temp register for some insns *)
-  | Iop(Itailcall_ind)
-  | Iop(Itailcall_imm _)
-  | Iop(Istackoffset _)
+  (* r0 used as temp register for this insn. *)
   | Iop(Iconst_float _)-> [|phys_reg 0|]
-  | Iop(Ialloc(_)) -> [||]    (* FIXME: Whatever is destroyed by alloc *)
+  | Iop(Ialloc(_)) -> [||]    (* r10 is destroyed, but we don't track that. *)
   | _ -> [||]
 
 let destroyed_at_raise = all_phys_regs
